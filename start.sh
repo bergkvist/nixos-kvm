@@ -7,6 +7,7 @@ ISO_NAME="nixos-$EDITION-$RELEASE.$VERSION-$ARCH.iso"
 ISO_URL="https://releases.nixos.org/nixos/$RELEASE/nixos-$RELEASE.$VERSION/$ISO_NAME"
 
 DISK_NAME="nixos.img"
+DISK_SIZE="120G"
 MEMORY_MB="32768"
 CPU_OPTIONS="+ssse3,+sse4.2,+popcnt,+avx,+aes,+xsave,+xsaveopt,check"
 CPU_SOCKETS="1"
@@ -16,7 +17,7 @@ CPU_THREADS="24"
 # Download NixOS ISO if it does not exist
 [ -f "$ISO_NAME" ] || wget "$ISO_URL"
 # Create disk image if it does not exist
-[ -f "$DISK_NAME" ] || qemu-img create -f qcow2 "$DISK_NAME" 25G
+[ -f "$DISK_NAME" ] || qemu-img create -f qcow2 "$DISK_NAME" "$DISK_SIZE"
 
 # First time setup/installation
 if [ "$1" = "install" ]; then
@@ -25,7 +26,12 @@ elif [ "$1" = "boot" ]; then
     qemu-system-x86_64 -enable-kvm -m "$MEMORY_MB" -boot a -hda "$DISK_NAME" \
         -bios /usr/share/edk2-ovmf/x64/OVMF_CODE.fd \
         -cpu Penryn,kvm=on,vendor=GenuineIntel,+invtsc,vmware-cpuid-freq=on,"$CPU_OPTIONS" \
-        -smp "$CPU_THREADS",cores="$CPU_CORES",sockets="$CPU_SOCKETS"
+        -smp "$CPU_THREADS",cores="$CPU_CORES",sockets="$CPU_SOCKETS" \
+        -chardev spicevmc,id=ch1,name=vdagent \
+        -device virtio-serial-pci \
+        -device virtserialport,chardev=ch1,id=ch1,name=com.redhat.spice.0 \
+        -netdev user,id=net0,hostfwd=tcp::1022-:22 \
+        -vga virtio
 else
     echo "Usage: $0 <OPTION>"
     echo "  Valid options (OPTION):"
