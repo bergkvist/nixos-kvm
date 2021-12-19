@@ -40,3 +40,29 @@ $ sudo -i
 
 # shutdown now
 ```
+
+```nix
+{
+  # ...
+  boot.loader.systemd-boot.enable = true;
+  # ...
+  nixpkgs.config.allowUnfree = true;
+  environment.systemPackages = with pkgs; [
+    git
+    vim
+    wget
+    firefox
+    insomnia
+    vscode
+    gitkraken
+    gcc
+    gnumake
+    cmake
+    automake
+    autoconf
+    python3
+    perl
+  ];
+  # ...
+}
+```
