@@ -1,76 +1,102 @@
 #!/bin/sh
-RELEASE="21.11"
-EDITION="plasma5"
-ARCH="x86_64-linux"
-VERSION="334534.2627c4b7951"
-ISO_NAME="nixos-$EDITION-$RELEASE.$VERSION-$ARCH.iso"
-ISO_URL="https://releases.nixos.org/nixos/$RELEASE/nixos-$RELEASE.$VERSION/$ISO_NAME"
+main() {
+    release="21.11"
+    edition="plasma5"
+    arch="x86_64-linux"
+    version="334534.2627c4b7951"
+    iso_name="nixos-$edition-$release.$version-$arch.iso"
+    iso_url="https://releases.nixos.org/nixos/$release/nixos-$release.$version/$iso_name"
 
-DISK_NAME="nixos.img"
-DISK_SIZE="120G"
-MEMORY_MB="32768"
-CPU_OPTIONS="+ssse3,+sse4.2,+popcnt,+avx,+aes,+xsave,+xsaveopt,check"
-CPU_SOCKETS="1"
-CPU_CORES="12"
-CPU_THREADS="24"
+    disk_name="nixos.img"
+    disk_size="120G"
+    memory_size="32G"
+    cpu_options="+ssse3,+sse4.2,+popcnt,+avx,+aes,+xsave,+xsaveopt,check"
+    cpu_sockets="1"
+    cpu_cores="12"
+    cpu_threads="24"
 
-# Download NixOS ISO if it does not exist
-[ -f "$ISO_NAME" ] || wget "$ISO_URL"
-# Create disk image if it does not exist
-[ -f "$DISK_NAME" ] || qemu-img create -f qcow2 "$DISK_NAME" "$DISK_SIZE"
+    boot_mode="$1"
+    host_os="$(uname)"
+    host_ovmf_code="/usr/share/edk2-ovmf/x64/OVMF_CODE.fd"
 
-# First time setup/installation
-if [ "$1" = "install" ]; then
-    qemu-system-x86_64 -enable-kvm -m "$MEMORY_MB" -boot d -cdrom "$ISO_NAME" -hda "$DISK_NAME"
-elif [ "$1" = "boot" ]; then
-    qemu-system-x86_64 -enable-kvm -m "$MEMORY_MB" -boot a -hda "$DISK_NAME" \
-        -bios /usr/share/edk2-ovmf/x64/OVMF_CODE.fd \
-        -cpu Penryn,kvm=on,vendor=GenuineIntel,+invtsc,vmware-cpuid-freq=on,"$CPU_OPTIONS" \
-        -smp "$CPU_THREADS",cores="$CPU_CORES",sockets="$CPU_SOCKETS" \
+    case "$boot_mode" in
+        install);;
+        boot);;
+        *)
+        echo "Usage: $0 <OPTION>"
+        echo "  Valid options (OPTION):"
+        echo "    install"
+        echo "      Mount $iso_name in order to install NixOS $release"
+        echo "    boot"
+        echo "      Regular boot from nixos.img (Note that you need to install NixOS before you can do this)"
+        exit 1
+        ;;
+    esac
+    [ -f "$iso_name" ] || {
+        echo "Downloading NixOS ISO $iso_name..."
+        wget "$iso_url"
+    }
+    [ -f "$disk_name" ] || {
+        echo "Creating disk image $disk_name ($disk_size)..."
+        qemu-img create -f qcow2 "$disk_name" "$disk_size"
+    }
+
+    eval "set -- \
+        $(boot_args "$boot_mode" "$disk_name" "$iso_name" "$host_ovmf_code") \
+        $(cpu_args "$host_os" "$cpu_sockets" "$cpu_cores" "$cpu_threads" "$cpu_options")
+    "
+
+    qemu-system-x86_64 -m "$memory_size" "$@" \
         -chardev spicevmc,id=ch1,name=vdagent \
         -device virtio-serial-pci \
         -device virtserialport,chardev=ch1,id=ch1,name=com.redhat.spice.0 \
-        -netdev user,id=net0,hostfwd=tcp::1022-:22 \
         -vga virtio
-else
-    echo "Usage: $0 <OPTION>"
-    echo "  Valid options (OPTION):"
-    echo "    install"
-    echo "      Mount $ISO_NAME in order to install NixOS $RELEASE"
-    echo "    boot"
-    echo "      Regular boot from nixos.img (Note that you need to install NixOS before you can do this)"
-    exit 1
-fi
+}
 
+boot_args() {
+    mode="$1"
+    disk_name="$2"
+    iso_name="$3"
+    ovmf_code="$4"
+    case "$mode" in
+        install) save -boot d -cdrom "$iso_name" -hda "$disk_name";;
+        boot) save -boot a -hda "$disk_name" -bios "$ovmf_code";;
+        *) die "Invalid boot mode: $mode";;
+    esac
+}
 
+cpu_args() {
+    host_os="$1"
+    sockets="$2"
+    cores="$3"
+    threads="$4"
+    cpu_options="$5"
+    case "$host_os" in
+        Linux) save \
+            -enable-kvm \
+            -cpu Penryn,kvm=on,vendor=GenuineIntel,+invtsc,vmware-cpuid-freq=on,"$cpu_options" \
+            -smp "$threads,cores=$cores,sockets=$sockets"
+        ;;
+        Darwin) save \
+            -accel hvf \
+            -cpu Penryn,vendor=GenuineIntel,vmware-cpuid-freq=on,"$cpu_options" \
+            -smp "$threads,cores=$cores,sockets=$sockets";;
+        *) die "Unsupported OS: $host_os";;
+    esac
+}
 
-# args=(
-#  -enable-kvm
-#  -usb
-#  -m "8096"
-#  -cpu Penryn,kvm=on,vendor=GenuineIntel,+invtsc,vmware-cpuid-freq=on,"$MY_OPTIONS"
-#  -machine q35
-#  -smp "$CPU_THREADS",cores="$CPU_CORES",sockets="$CPU_SOCKETS"
-#  -smbios type=2
-#  -monitor stdio
-#  -device usb-kbd
-#  -device usb-tablet
-#  -device usb-ehci,id=ehci
-#  -device isa-applesmc,osk="ourhardworkbythesewordsguardedpleasedontsteal(c)AppleComputerInc"
-#  -device ich9-intel-hda
-#  -device hda-duplex
-#  -device ich9-ahci,id=sata
-#  -device VGA,vgamem_mb=128
-#  -device ide-hd,bus=sata.2,drive=OpenCoreBoot
-#  -device ide-hd,bus=sata.3,drive=InstallMedia
-#  -device ide-hd,bus=sata.4,drive=MacHDD
-#  -device vmxnet3,netdev=net0,id=net0,mac=52:54:00:c9:18:27
-#  -netdev user,id=net0,hostfwd=tcp::3222-:22
-#  -drive if=pflash,format=raw,readonly,file="./data/OVMF_CODE.fd"
-#  -drive if=pflash,format=raw,file="./data/OVMF_VARS-1024x768.fd"
-#  -drive id=OpenCoreBoot,if=none,snapshot=on,format=qcow2,file="./data/OpenCore.qcow2"
-#  -drive id=InstallMedia,if=none,file="./data/BaseSystem.img",format=raw
-#  -drive id=MacHDD,if=none,file="./data/mac_hdd_ng.img",format=qcow2
-# )
+named_usb_args() {
+    [ -z "$1" ] && die "Usage: qemu_usb <SEARCH_TERM>"
+    usb=$(lsusb | grep "$1")
+    [ -z "$usb" ] && die "Did not find USB with name \"$1\". Please make sure the device is connected."
+    bus=$(echo "$usb" | sed 's/.*Bus \([^ ]*\) Device.*/\1/' | sed 's/^0*//')
+    device=$(echo "$usb" | sed 's/.*Device \([^ ]*\): ID.*/\1/' | sed 's/^0*//')
+    port=$(lsusb -t | awk "/Bus $(printf '%02d' "$bus")/{seen=1};seen{print}" \
+                    | grep "Dev $((device))" | head -n1 | sed 's/.*Port \([^ ]*\): Dev.*/\1/')
+    save -device usb-host,hostbus=$((bus)),hostport=$((port))
+}
 
-# qemu-system-x86_64 "${args[@]}"
+save() { for i do printf %s\\n "$i" | sed "s/'/'\\\\''/g;1s/^/'/;\$s/\$/' \\\\/" ; done; echo " "; }
+die() { echo "$@" 1>&2; exit 1; }
+
+main "$@"
