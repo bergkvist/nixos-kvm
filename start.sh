@@ -43,7 +43,8 @@ main() {
 
     eval "set -- \
         $(boot_args "$boot_mode" "$disk_name" "$iso_name" "$host_ovmf_code") \
-        $(cpu_args "$host_os" "$cpu_sockets" "$cpu_cores" "$cpu_threads" "$cpu_options")
+        $(cpu_args "$host_os" "$cpu_sockets" "$cpu_cores" "$cpu_threads" "$cpu_options") \
+        $(shared_folder_args "host0" "$PWD/shared")
     "
 
     qemu-system-x86_64 -m "$memory_size" "$@" \
@@ -85,6 +86,14 @@ cpu_args() {
     esac
 }
 
+shared_folder_args() {
+    # To mount manually in guest: 
+    # mkdir -p /mnt/shared && mount -t 9p -o trans=virtio,version=9p2000.L <name> /mnt/shared
+    name="$1"
+    shared_folder="$2"
+    save -virtfs "local,path=$shared_folder,mount_tag=$name,security_model=passthrough,id=$name"
+}
+
 named_usb_args() {
     [ -z "$1" ] && die "Usage: qemu_usb <SEARCH_TERM>"
     usb=$(lsusb | grep "$1")
@@ -96,7 +105,11 @@ named_usb_args() {
     save -device usb-host,hostbus=$((bus)),hostport=$((port))
 }
 
-save() { for i do printf %s\\n "$i" | sed "s/'/'\\\\''/g;1s/^/'/;\$s/\$/' \\\\/" ; done; echo " "; }
+save() {
+    for i do printf %s\\n "$i" | sed "s/'/'\\\\''/g;1s/^/'/;\$s/\$/' \\\\/" ; done
+    echo " "
+}
+
 die() { echo "$@" 1>&2; exit 1; }
 
 main "$@"
