@@ -89,6 +89,8 @@ cpu_args() {
 shared_folder_args() {
     # To mount manually in guest: 
     # mkdir -p /mnt/shared && mount -t 9p -o trans=virtio,version=9p2000.L <name> /mnt/shared
+    # fstab entry
+    # host0   /mnt/shared    9p      trans=virtio,version=9p2000.L   0 0
     name="$1"
     shared_folder="$2"
     save -virtfs "local,path=$shared_folder,mount_tag=$name,security_model=passthrough,id=$name"
